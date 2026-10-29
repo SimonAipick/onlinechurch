@@ -12,7 +12,7 @@
 <meta property="og:site_name" content="온라인교회">
 <meta property="og:title" content="온라인교회">
 <meta property="og:description" content="마음의 평안을 얻는 곳 · 언제 어디서나 함께 예배해요">
-<meta property="og:image" content="https://simonaipick.github.io/onlinechurch/og.png">
+<meta property="og:image" content="https://simonaipick.github.io/onlinechurch/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
@@ -568,10 +568,10 @@ const AudioEng = (() => {
     if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return true; }
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
     ctx = new AC();
-    comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 3; comp.connect(ctx.destination);
+    comp = ctx.createDynamicsCompressor(); comp.threshold.value = -8; comp.ratio.value = 2; comp.knee.value = 12; comp.connect(ctx.destination);
     master = ctx.createGain(); master.gain.value = S.muted ? 0 : 1; master.connect(comp);
-    reverb = ctx.createConvolver(); reverb.buffer = makeIR(3.4);
-    const wet = ctx.createGain(); wet.gain.value = .38; reverb.connect(wet); wet.connect(master);
+    reverb = ctx.createConvolver(); reverb.buffer = makeIR(2.2);
+    const wet = ctx.createGain(); wet.gain.value = .2; reverb.connect(wet); wet.connect(master);
     hymnBus = ctx.createGain(); hymnBus.gain.value = S.hymnVol/100; hymnBus.connect(master); hymnBus.connect(reverb);
     ambBus = ctx.createGain(); ambBus.gain.value = S.amb ? S.ambVol/100 : 0; ambBus.connect(master);
     const ambVerb = ctx.createGain(); ambVerb.gain.value = .25; ambBus.connect(ambVerb); ambVerb.connect(reverb);
@@ -579,38 +579,35 @@ const AudioEng = (() => {
     return true;
   }
   const midiF = m => 440*Math.pow(2,(m-69)/12);
-  // piano: hammer strike, partials that fade faster the higher they are, slight string stretch, dampers at note end
+  // piano: a clean hammer attack, a single in-tune string per note, upper partials fading quickly, dampers at note end
   let noiseBuf = null;
-  const PIANO_GAIN = { principal: 1, flute: .62, bass: .9 };
+  const PIANO_GAIN = { principal: 1, flute: .42, bass: .62 };
   function pianoNote(dest, midi, t, dur, vel, stop){
-    const f = midiF(midi), v = Math.min(1, vel * PIANO_GAIN[stop] * 1.25);
-    const tau = Math.max(.45, Math.min(3.2, 1.7 * Math.pow(440 / f, .45)));   // low strings ring longer
-    const off = t + Math.max(.08, dur), stopAt = off + .5;
+    const f = midiF(midi), v = Math.min(1, vel * PIANO_GAIN[stop] * 1.3);
+    const tau = Math.max(.35, Math.min(2.2, 1.15 * Math.pow(440 / f, .4)));   // low strings ring longer
+    const off = t + Math.max(.08, dur), stopAt = off + .4;
     const out = ctx.createGain(); out.gain.setValueAtTime(1, t);
-    out.gain.setValueAtTime(1, off); out.gain.setTargetAtTime(0, off, .09);    // damper
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = .4;
-    const bright = 1400 + v * 4200;
-    lp.frequency.setValueAtTime(bright, t); lp.frequency.exponentialRampToValueAtTime(Math.max(500, bright * .35), t + Math.min(2.5, tau));
+    out.gain.setValueAtTime(1, off); out.gain.setTargetAtTime(0, off, .07);    // damper
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = .2;
+    const bright = Math.min(9000, 3200 + v * 5200);
+    lp.frequency.setValueAtTime(bright, t); lp.frequency.setTargetAtTime(Math.max(1800, bright * .5), t + .02, .6);
     out.connect(lp); lp.connect(dest);
-    const B = .00035, P = [[1,1],[2,.55],[3,.3],[4,.18],[5,.11],[6,.07],[7,.04]];
-    P.forEach(([n, a], i) => {
-      if (f * n > 9000) return;
-      const fn = f * n * Math.sqrt(1 + B * n * n);
-      [-1.6, 1.6].slice(0, i === 0 ? 2 : 1).forEach(det => {               // two slightly detuned strings on the fundamental
-        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = fn; o.detune.value = i === 0 ? det : 0;
-        const g = ctx.createGain(), peak = a * .16 * v * (i === 0 ? .6 : 1);
-        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + .004);
-        g.gain.setTargetAtTime(peak * .35, t + .004, .08 + .02 / n);                   // quick initial drop after the strike
-        g.gain.setTargetAtTime(0.0001, t + .15, tau / (1 + .55 * (n - 1)));            // long ringing decay
-        o.connect(g); g.connect(out); o.start(t); o.stop(stopAt);
-      });
+    const P = [[1, 1], [2, .42], [3, .2], [4, .11], [5, .06]];
+    P.forEach(([n, a]) => {
+      if (f * n > 10000) return;
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * n;
+      const g = ctx.createGain(), peak = a * .2 * v;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + .003);
+      g.gain.setTargetAtTime(peak * .5, t + .003, .05 + .03 / n);                     // the strike settles
+      g.gain.setTargetAtTime(0.0001, t + .12, tau / (1 + .8 * (n - 1)));               // clean ringing decay
+      o.connect(g); g.connect(out); o.start(t); o.stop(stopAt);
     });
-    // felt hammer thump
-    if (!noiseBuf){ const len = Math.floor(ctx.sampleRate * .04); noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 3); }
+    if (!noiseBuf){ const len = Math.floor(ctx.sampleRate * .02); noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 4); }
     const nz = ctx.createBufferSource(); nz.buffer = noiseBuf;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = Math.min(4000, f * 3); bp.Q.value = .8;
-    const ng = ctx.createGain(); ng.gain.value = .05 * v; nz.connect(bp); bp.connect(ng); ng.connect(out); nz.start(t);
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2500;
+    const ng = ctx.createGain(); ng.gain.value = .018 * v; nz.connect(hp); hp.connect(ng); ng.connect(out); nz.start(t);
   }
+
 
   // --- song building
   function toMidi(n){
