@@ -1837,7 +1837,7 @@ const Net = (() => {
     if (parts[2] === 'state'){
       const id = parts[3]; if (id === myId) return;
       if (!d){ dropRemote(id); return; }
-      if (Date.now() - d.t > 90000){ pub(topic, null, true); return; }   // tidy up a stale visitor left on the relay
+      if (Date.now() - d.t > 45000){ pub(topic, null, true); return; }   // tidy up a stale visitor left on the relay
       upsertRemote(d);
     } else if (parts[2] === 'event' && d && d.id !== myId){
       const o = others.find(x => x.id === d.id);
